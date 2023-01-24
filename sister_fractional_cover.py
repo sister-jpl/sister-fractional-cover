@@ -52,6 +52,7 @@ def main():
 
     # Define paths and variables
     sister_frcov_dir = os.path.abspath(os.path.dirname(__file__))
+    specun_dir = os.path.join(os.path.dirname(sister_frcov_dir), "SpectralUnmixing")
 
     corfl_basename = None
     for file in run_config["inputs"]["file"]:
@@ -63,7 +64,7 @@ def main():
     frcov_hdr_path = f"work/{frcov_basename}.hdr"
 
     # Build command and run unmix.jl
-    unmix_exe = f"{sister_frcov_dir}/unmix.jl"
+    unmix_exe = f"{specun_dir}/unmix.jl"
     endmember_lib_path = f"{sister_frcov_dir}/data/veg_soil_water_snow_endmembers.csv"
     log_path = f"output/{frcov_basename}.log"
     cmd = ["julia"]
