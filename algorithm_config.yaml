@@ -24,10 +24,10 @@ inputs:
     - name: n_cores
       default: "1"
     - name: refl_nodata
-        default: "None"
+      default: "None"
     - name: refl_scale
-        default: "None"
+      default: "None"
     - name: normalization
-        default: "None"
+      default: "None"
     - name: crid
       default: "000"
