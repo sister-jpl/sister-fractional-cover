@@ -70,7 +70,7 @@ def main():
     cmd = ["julia"]
     # Add parallelization if n_cores > 1
     if run_config["inputs"]["config"]["n_cores"] > 1:
-        cmd += ["-p", run_config["inputs"]["config"]["n_cores"]]
+        cmd += ["-p", str(run_config["inputs"]["config"]["n_cores"])]
     # Add required args
     cmd += [
         unmix_exe,
