@@ -59,9 +59,13 @@ def main():
         if "corrected_reflectance_dataset" in file:
             corfl_basename = os.path.basename(file["corrected_reflectance_dataset"])
     frcov_basename = corfl_basename.replace("L2A_CORFL", "L2A_FRCOV")
-    corfl_img_path = f"input/{corfl_basename}/{corfl_basename}.bin"
+    corfl_img_path = f"work/{corfl_basename}"
+    corfl_hdr_path = f"work/{corfl_basename}.hdr"
     frcov_img_path = f"work/{frcov_basename}"
-    frcov_hdr_path = f"work/{frcov_basename}.hdr"
+
+    # Copy the input files into the work directory (don't use .bin)
+    subprocess.run(f"cp input/{corfl_basename}/{corfl_basename}.bin {corfl_img_path}", shell=True)
+    subprocess.run(f"cp input/{corfl_basename}/{corfl_basename}.hdr {corfl_hdr_path}", shell=True)
 
     # Build command and run unmix.jl
     unmix_exe = f"{specun_dir}/unmix.jl"
