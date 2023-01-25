@@ -12,12 +12,20 @@ import subprocess
 import sys
 
 
+def get_frcov_basename(corfl_basename, crid):
+    # Replace product type
+    tmp_basename = corfl_basename.replace("L2A_CORFL", "L2A_FRCOV")
+    # Split, remove old CRID, and add new one
+    tokens = tmp_basename.split("_")[:-1] + [crid]
+    return "_".join(tokens)
+
+
 def generate_metadata(run_config, frcov_met_json_path):
     # Create .met.json file from runconfig for fractional cover
     metadata = run_config["metadata"]
     metadata["product"] = "FRCOV"
     metadata["processing_level"] = "L2A"
-    metadata["description"] = "Fractional Cover"
+    metadata["description"] = "Fractional cover (soil, vegetation, water, snow)"
     with open(frcov_met_json_path, "w") as f:
         json.dump(metadata, f, indent=4)
 
@@ -58,7 +66,8 @@ def main():
     for file in run_config["inputs"]["file"]:
         if "corrected_reflectance_dataset" in file:
             corfl_basename = os.path.basename(file["corrected_reflectance_dataset"])
-    frcov_basename = corfl_basename.replace("L2A_CORFL", "L2A_FRCOV")
+    frcov_basename = get_frcov_basename(corfl_basename, run_config["inputs"]["config"]["crid"])
+
     corfl_img_path = f"work/{corfl_basename}"
     corfl_hdr_path = f"work/{corfl_basename}.hdr"
     frcov_img_path = f"work/{frcov_basename}"
@@ -86,11 +95,11 @@ def main():
         f"--log_file={log_path}"
     ]
     # Add the optional args
-    if run_config['inputs']['config']['refl_nodata'] != "None":
+    if run_config["inputs"]["config"]["refl_nodata"] != "None":
         cmd += [f"--refl_nodata={run_config['inputs']['config']['refl_nodata']}"]
-    if run_config['inputs']['config']['refl_scale'] != "None":
+    if run_config["inputs"]["config"]["refl_scale"] != "None":
         cmd += [f"--refl_scale={run_config['inputs']['config']['refl_scale']}"]
-    if run_config['inputs']['config']['normalization'] != "None":
+    if run_config["inputs"]["config"]["normalization"] != "None":
         cmd += [f"--normalization={run_config['inputs']['config']['normalization']}"]
 
     print("Running unmix.jl command: " + " ".join(cmd))
@@ -107,6 +116,7 @@ def main():
     generate_quicklook(frcov_img_path, frcov_ql_path)
 
     # TODO: Convert to COG
+    # The output ENVI file is located at f"{frcov_img_path}_fractional_cover"
 
     # Move runconfig
     subprocess.run(f"mv runconfig.json output/{frcov_basename}.runconfig.json", shell=True)
