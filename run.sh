@@ -21,7 +21,6 @@ source activate spectral-unmixing
 
 # Get repository directory and export the JULIA_PROJECT env variable
 REPO_DIR=$(cd "$(dirname "$0")"; pwd -P)
-export JULIA_PROJECT=$REPO_DIR
 
 # Generate runconfig
 python ${REPO_DIR}/generate_runconfig.py inputs.json
