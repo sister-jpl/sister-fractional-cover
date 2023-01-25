@@ -116,9 +116,10 @@ def main():
     generate_quicklook(frcov_img_path, frcov_ql_path)
 
     # TODO: Convert to COG
-    # The output ENVI file is located at f"{frcov_img_path}_fractional_cover"
+    # The fractional cover ENVI file is located at f"{frcov_img_path}_fractional_cover"
 
-    # Move runconfig
+    # Move/rename files to output folders
+    # TODO: Move COG files to output folder if needed
     subprocess.run(f"mv runconfig.json output/{frcov_basename}.runconfig.json", shell=True)
 
 
