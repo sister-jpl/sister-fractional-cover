@@ -21,7 +21,7 @@ from PIL import Image
 
 def get_frcov_basename(corfl_basename, crid):
     # Replace product type
-    tmp_basename = corfl_basename.replace("L2A_CORFL", "L2A_FRCOV")
+    tmp_basename = corfl_basename.replace("L2A_CORFL", "L2B_FRCOV")
     # Split, remove old CRID, and add new one
     tokens = tmp_basename.split("_")[:-1] + [crid]
     return "_".join(tokens)
@@ -31,7 +31,7 @@ def generate_metadata(run_config, frcov_met_json_path):
     # Create .met.json file from runconfig for fractional cover
     metadata = run_config["metadata"]
     metadata["product"] = "FRCOV"
-    metadata["processing_level"] = "L2A"
+    metadata["processing_level"] = "L2B"
     metadata["description"] = "Fractional cover (soil, vegetation, water, snow)"
     with open(frcov_met_json_path, "w") as f:
         json.dump(metadata, f, indent=4)
