@@ -65,8 +65,8 @@ def main():
 
     corfl_basename = None
     for file in run_config["inputs"]["file"]:
-        if "corrected_reflectance_dataset" in file:
-            corfl_basename = os.path.basename(file["corrected_reflectance_dataset"])
+        if "l2a_rfl" in file:
+            corfl_basename = os.path.basename(file["l2a_rfl"])
     frcov_basename = get_frcov_basename(corfl_basename, run_config["inputs"]["config"]["crid"])
 
     corfl_img_path = f"work/{corfl_basename}"

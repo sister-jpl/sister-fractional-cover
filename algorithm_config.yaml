@@ -17,7 +17,7 @@ inputs:
 # remove below this line if no inputs
 # rename and set algorithm input names accordingly
   file:
-    - name: corrected_reflectance_dataset
+    - name: l2a_rfl
       required: True
   config:
     - name: n_cores
@@ -29,6 +29,7 @@ inputs:
     - name: normalization
       default: "None"
     - name: crid
+
       default: "000"
     - name: _force_ingest
       default: "True"
