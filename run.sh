@@ -23,6 +23,7 @@ source activate spectral-unmixing
 REPO_DIR=$(cd "$(dirname "$0")"; pwd -P)
 APP_DIR=$(dirname ${REPO_DIR})
 SPECUN_DIR="$APP_DIR/SpectralUnmixing"
+
 export JULIA_PROJECT=$SPECUN_DIR
 
 # Generate runconfig

@@ -9,7 +9,14 @@ Author: Winston Olson-Duvall
 import json
 import os
 import subprocess
+import shutil
 import sys
+try:
+    from osgeo import gdal
+except:
+    import gdal
+import numpy as np
+from PIL import Image
 
 
 def get_frcov_basename(corfl_basename, crid):
@@ -29,12 +36,6 @@ def generate_metadata(run_config, frcov_met_json_path):
     with open(frcov_met_json_path, "w") as f:
         json.dump(metadata, f, indent=4)
 
-
-def generate_quicklook(rfl_img_path, output_path):
-    # TODO: Add quicklook code
-    pass
-
-
 def main():
     """
         This function takes as input the path to an inputs.json file and exports a run config json
@@ -49,14 +50,14 @@ def main():
         run_config = json.load(f)
 
     # Make work dir
-    print("Making work directory")
     if not os.path.exists("work"):
-        subprocess.run("mkdir work", shell=True)
+        print("Making work directory")
+        os.mkdir('work')
 
     # Make output dir
-    print("Making output directory")
     if not os.path.exists("output"):
-        subprocess.run("mkdir output", shell=True)
+        print("Making output directory")
+        os.mkdir('output')
 
     # Define paths and variables
     sister_frcov_dir = os.path.abspath(os.path.dirname(__file__))
@@ -73,14 +74,15 @@ def main():
     frcov_img_path = f"work/{frcov_basename}"
 
     # Copy the input files into the work directory (don't use .bin)
-    subprocess.run(f"cp input/{corfl_basename}/{corfl_basename}.bin {corfl_img_path}", shell=True)
-    subprocess.run(f"cp input/{corfl_basename}/{corfl_basename}.hdr {corfl_hdr_path}", shell=True)
+    shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.bin",corfl_img_path)
+    shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.hdr",corfl_hdr_path)
 
     # Build command and run unmix.jl
     unmix_exe = f"{specun_dir}/unmix.jl"
     endmember_lib_path = f"{sister_frcov_dir}/data/veg_soil_water_snow_endmembers.csv"
     log_path = f"output/{frcov_basename}.log"
     cmd = ["julia"]
+
     # Add parallelization if n_cores > 1
     if run_config["inputs"]["config"]["n_cores"] > 1:
         cmd += ["-p", str(run_config["inputs"]["config"]["n_cores"])]
@@ -113,14 +115,84 @@ def main():
     # Generate quicklook
     frcov_ql_path = f"output/{frcov_basename}.png"
     print(f"Generating quicklook to {frcov_ql_path}")
-    generate_quicklook(frcov_img_path, frcov_ql_path)
 
-    # TODO: Convert to COG
-    # The fractional cover ENVI file is located at f"{frcov_img_path}_fractional_cover"
+    frcov_img_file = f'{frcov_img_path}_fractional_cover'
+    frcov_gdal = gdal.Open(frcov_img_file)
 
-    # Move/rename files to output folders
-    # TODO: Move COG files to output folder if needed
-    subprocess.run(f"mv runconfig.json output/{frcov_basename}.runconfig.json", shell=True)
+    bands = []
+
+    for band_num in range(1,4):
+        band = frcov_gdal.GetRasterBand(band_num)
+        bands.append(band.ReadAsArray())
+
+    no_data = band.GetNoDataValue()
+    rgb=  np.array(bands)
+    rgb[rgb == no_data] = np.nan
+
+    rgb = np.moveaxis(rgb,0,-1).astype(float)
+    bottom = np.nanpercentile(rgb,5,axis = (0,1))
+    top = np.nanpercentile(rgb,95,axis = (0,1))
+    rgb = np.clip(rgb,bottom,top)
+    rgb = (rgb-np.nanmin(rgb,axis=(0,1)))/(np.nanmax(rgb,axis= (0,1))-np.nanmin(rgb,axis= (0,1)))
+    rgb = (rgb*255).astype(np.uint8)
+
+    im = Image.fromarray(rgb)
+    im.save(frcov_ql_path)
+
+    #Convert to COG
+    temp_file =  f'{frcov_img_file}.tif'
+    out_file =  f"output/{frcov_basename}.tif"
+
+    print(f"Creating COG {out_file}")
+
+    band_names = ['soil',
+                  'vegetation',
+                  'water',
+                  'snow/ice',
+                  'brightness']
+
+    units = ['PERCENT',
+                  'PERCENT',
+                  'PERCENT',
+                  'PERCENT',
+                  'UNITELESS']
+
+    descriptions=  ['SOIL PERCENT COVER',
+                     'VEGETATION PERCENT COVER',
+                     'WATER PERCENTCOVER',
+                     'SNOW/ICE PERCENT COVER',
+                     'BRIGHTNESS']
+
+    # Set the output raster transform and projection properties
+    driver = gdal.GetDriverByName("GTIFF")
+    tiff = driver.Create(temp_file,
+                         frcov_gdal.RasterXSize,
+                         frcov_gdal.RasterYSize,
+                         frcov_gdal.RasterCount,
+                         gdal.GDT_Float32)
+
+    tiff.SetGeoTransform(frcov_gdal.GetGeoTransform())
+    tiff.SetProjection(frcov_gdal.GetProjection())
+    tiff.SetMetadataItem("DESCRIPTION","FRACTIONAL COVER")
+
+    # Write bands to file
+    for i,band_name in enumerate(band_names):
+        in_band = frcov_gdal.GetRasterBand(i+1).ReadAsArray()
+        out_band = tiff.GetRasterBand(i+1)
+        out_band.WriteArray(in_band)
+        out_band.SetDescription(band_name)
+        out_band.SetNoDataValue(no_data)
+        out_band.SetMetadataItem("UNITS",units[i])
+        out_band.SetMetadataItem("DESCRIPTION",descriptions[i])
+    del tiff, driver
+
+    os.system(f"gdaladdo -minsize 900 {temp_file}")
+    os.system(f"gdal_translate {temp_file} {out_file} -co COMPRESS=LZW -co TILED=YES -co COPY_SRC_OVERVIEWS=YES")
+
+    out_runconfig =  f"output/{frcov_basename}.runconfig.json"
+    print(f"Copying runconfig to {out_runconfig}")
+    shutil.copyfile(in_file,
+                    out_runconfig)
 
 
 if __name__ == "__main__":
