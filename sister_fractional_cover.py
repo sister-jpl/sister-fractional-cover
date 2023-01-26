@@ -23,7 +23,7 @@ def get_frcov_basename(corfl_basename, crid):
     # Replace product type
     tmp_basename = corfl_basename.replace("L2A_CORFL", "L2B_FRCOV")
     # Split, remove old CRID, and add new one
-    tokens = tmp_basename.split("_")[:-1] + [crid]
+    tokens = tmp_basename.split("_")[:-1] + [str(crid)]
     return "_".join(tokens)
 
 
