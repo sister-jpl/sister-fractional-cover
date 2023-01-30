@@ -95,7 +95,7 @@ def main():
         frcov_img_path,
         "--mode=sma",
         f"--log_file={log_path}",
-        "--num_endmembers 3"
+        "--num_endmembers 4"
     ]
     # Add the optional args
     if run_config["inputs"]["config"]["refl_nodata"] != "None":
@@ -108,6 +108,31 @@ def main():
     print("Running unmix.jl command: " + " ".join(cmd))
     subprocess.run(" ".join(cmd), shell=True)
 
+    frcov_img_file = f'{frcov_img_path}_fractional_cover'
+    frcov_gdal = gdal.Open(frcov_img_file)
+
+    band_names = ['soil',
+                  'vegetation',
+                  'water',
+                  'snow/ice',
+                  'brightness']
+
+    bands = []
+    cover_counts = {}
+
+    # Load bands and calculate cover percentile counts
+    for band_num in range(0,4):
+        frac_dict = {}
+        band = frcov_gdal.GetRasterBand(band_num+1)
+        band_arr = band.ReadAsArray()
+        bands.append(band_arr)
+
+        for percent in np.linspace(0,1,11):
+            frac_dict[round(percent,1)] = float((band_arr >= percent).sum())
+        cover_counts[band_names[band_num]] = frac_dict
+
+    run_config["metadata"]["cover_percentile_counts"] = cover_counts
+
     # Generate metadata in .met.json file
     frcov_met_json_path = f"output/{frcov_basename}.met.json"
     print(f"Generating metadata from runconfig to {frcov_met_json_path}")
@@ -116,15 +141,6 @@ def main():
     # Generate quicklook
     frcov_ql_path = f"output/{frcov_basename}.png"
     print(f"Generating quicklook to {frcov_ql_path}")
-
-    frcov_img_file = f'{frcov_img_path}_fractional_cover'
-    frcov_gdal = gdal.Open(frcov_img_file)
-
-    bands = []
-
-    for band_num in range(1,4):
-        band = frcov_gdal.GetRasterBand(band_num)
-        bands.append(band.ReadAsArray())
 
     no_data = band.GetNoDataValue()
     rgb=  np.array(bands)
@@ -146,23 +162,17 @@ def main():
 
     print(f"Creating COG {out_file}")
 
-    band_names = ['soil',
-                  'vegetation',
-                  'water',
-                  'snow/ice',
-                  'brightness'][:frcov_gdal.RasterCount]
-
     units = ['PERCENT',
                   'PERCENT',
                   'PERCENT',
                   'PERCENT',
-                  'UNITELESS'][:frcov_gdal.RasterCount]
+                  'UNITELESS']
 
     descriptions=  ['SOIL PERCENT COVER',
                      'VEGETATION PERCENT COVER',
                      'WATER PERCENTCOVER',
                      'SNOW/ICE PERCENT COVER',
-                     'BRIGHTNESS'][:frcov_gdal.RasterCount]
+                     'BRIGHTNESS']
 
     # Set the output raster transform and projection properties
     driver = gdal.GetDriverByName("GTIFF")
@@ -194,7 +204,6 @@ def main():
     print(f"Copying runconfig to {out_runconfig}")
     shutil.copyfile(in_file,
                     out_runconfig)
-
 
 if __name__ == "__main__":
     main()
