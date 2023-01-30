@@ -21,7 +21,7 @@ from PIL import Image
 
 def get_frcov_basename(corfl_basename, crid):
     # Replace product type
-    tmp_basename = corfl_basename.replace("L2A_CORFL", "L2A_FRCOV")
+    tmp_basename = corfl_basename.replace("L2A_CORFL", "L2B_FRCOV")
     # Split, remove old CRID, and add new one
     tokens = tmp_basename.split("_")[:-1] + [str(crid)]
     return "_".join(tokens)
@@ -31,7 +31,7 @@ def generate_metadata(run_config, frcov_met_json_path):
     # Create .met.json file from runconfig for fractional cover
     metadata = run_config["metadata"]
     metadata["product"] = "FRCOV"
-    metadata["processing_level"] = "L2A"
+    metadata["processing_level"] = "L2B"
     metadata["description"] = "Fractional cover (soil, vegetation, water, snow)"
     with open(frcov_met_json_path, "w") as f:
         json.dump(metadata, f, indent=4)
@@ -94,7 +94,8 @@ def main():
         "class",
         frcov_img_path,
         "--mode=sma",
-        f"--log_file={log_path}"
+        f"--log_file={log_path}",
+        "--num_endmembers 3"
     ]
     # Add the optional args
     if run_config["inputs"]["config"]["refl_nodata"] != "None":
@@ -149,19 +150,19 @@ def main():
                   'vegetation',
                   'water',
                   'snow/ice',
-                  'brightness']
+                  'brightness'][:frcov_gdal.RasterCount]
 
     units = ['PERCENT',
                   'PERCENT',
                   'PERCENT',
                   'PERCENT',
-                  'UNITELESS']
+                  'UNITELESS'][:frcov_gdal.RasterCount]
 
     descriptions=  ['SOIL PERCENT COVER',
                      'VEGETATION PERCENT COVER',
                      'WATER PERCENTCOVER',
                      'SNOW/ICE PERCENT COVER',
-                     'BRIGHTNESS']
+                     'BRIGHTNESS'][:frcov_gdal.RasterCount]
 
     # Set the output raster transform and projection properties
     driver = gdal.GetDriverByName("GTIFF")
