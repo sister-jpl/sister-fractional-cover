@@ -10,7 +10,7 @@ app_dir=$(dirname ${pge_dir})
 
 # Get SpectralUnmixing repo
 cd $app_dir
-git clone https://github.com/EnSpec/SpectralUnmixing.git -b sister-dev
+git clone https://github.com/EnSpec/SpectralUnmixing.git -b v0.2.1-sister
 specun_dir="$app_dir/SpectralUnmixing"
 
 # Install Julia and then install Julia dependencies
