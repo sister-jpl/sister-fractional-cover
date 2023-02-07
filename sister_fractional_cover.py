@@ -11,11 +11,14 @@ import os
 import subprocess
 import shutil
 import sys
+import hytools as ht
+import pandas as pd
+import numpy as np
+
 try:
     from osgeo import gdal
 except:
     import gdal
-import numpy as np
 from PIL import Image
 
 
@@ -65,8 +68,8 @@ def main():
 
     corfl_basename = None
     for file in run_config["inputs"]["file"]:
-        if "l2a_rfl" in file:
-            corfl_basename = os.path.basename(file["l2a_rfl"])
+        if "reflectance_dataset" in file:
+            corfl_basename = os.path.basename(file["reflectance_dataset"])
     frcov_basename = get_frcov_basename(corfl_basename, run_config["inputs"]["config"]["crid"])
 
     corfl_img_path = f"work/{corfl_basename}"
@@ -77,33 +80,46 @@ def main():
     shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.bin",corfl_img_path)
     shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.hdr",corfl_hdr_path)
 
+    #Load reflectance im
+    rfl = ht.HyTools()
+    rfl.read_file(corfl_img_path)
+
+    line_data = (rfl.get_band(0) == rfl.no_data).sum(axis=1)
+    start_line = 1+np.argwhere(line_data != rfl.columns)[0][0]
+    end_line = rfl.lines - np.argwhere(np.flip(line_data) != rfl.columns)[0][0] -1
+
+    endmember_lib_path = f"{sister_frcov_dir}/data/veg_soil_water_snow_endmembers.csv"
+    endmembers = pd.read_csv(endmember_lib_path)
+    #Exclude snow endmember for DESIS
+    if "DESIS" in corfl_img_path:
+        endmembers = endmembers[endmembers['class'] != 'snow']
+    endmembers.to_csv('endmembers.csv',index = False)
+
     # Build command and run unmix.jl
     unmix_exe = f"{specun_dir}/unmix.jl"
-    endmember_lib_path = f"{sister_frcov_dir}/data/veg_soil_water_snow_endmembers.csv"
     log_path = f"output/{frcov_basename}.log"
+
+    # Add required args
     cmd = ["julia"]
 
     # Add parallelization if n_cores > 1
     if run_config["inputs"]["config"]["n_cores"] > 1:
         cmd += ["-p", str(run_config["inputs"]["config"]["n_cores"])]
-    # Add required args
+
     cmd += [
         unmix_exe,
         corfl_img_path,
-        endmember_lib_path,
+        'endmembers.csv',
         "class",
         frcov_img_path,
         "--mode=sma",
         f"--log_file={log_path}",
-        "--num_endmembers 4"
-    ]
-    # Add the optional args
-    if run_config["inputs"]["config"]["refl_nodata"] != "None":
-        cmd += [f"--refl_nodata={run_config['inputs']['config']['refl_nodata']}"]
-    if run_config["inputs"]["config"]["refl_scale"] != "None":
-        cmd += [f"--refl_scale={run_config['inputs']['config']['refl_scale']}"]
-    if run_config["inputs"]["config"]["normalization"] != "None":
-        cmd += [f"--normalization={run_config['inputs']['config']['normalization']}"]
+        f"--num_endmembers={len(endmembers)}",
+        f"--refl_nodata={rfl.no_data}",
+        f"--start_line={start_line}",
+        f"--end_line={end_line}",
+        f"--normalization={run_config['inputs']['config']['normalization']}",
+        f"--refl_scale={run_config['inputs']['config']['refl_scale']}"]
 
     print("Running unmix.jl command: " + " ".join(cmd))
     subprocess.run(" ".join(cmd), shell=True)
@@ -111,11 +127,7 @@ def main():
     frcov_img_file = f'{frcov_img_path}_fractional_cover'
     frcov_gdal = gdal.Open(frcov_img_file)
 
-    band_names = ['soil',
-                  'vegetation',
-                  'water',
-                  'snow/ice',
-                  'brightness']
+    band_names = ['soil','vegetation','water','snow_ice']
 
     bands = []
     cover_counts = {}
@@ -123,10 +135,13 @@ def main():
     # Load bands and calculate cover percentile counts
     for band_num in range(0,4):
         frac_dict = {}
-        band = frcov_gdal.GetRasterBand(band_num+1)
-        band_arr = band.ReadAsArray()
-        bands.append(band_arr)
 
+        if ("DESIS" in corfl_img_path) and (band_num ==3):
+            band_arr = np.zeros((frcov_gdal.RasterYSize,frcov_gdal.RasterXSize))
+        else:
+            band = frcov_gdal.GetRasterBand(band_num+1)
+            band_arr = band.ReadAsArray()
+        bands.append(band_arr)
         for percent in np.linspace(0,1,11):
             frac_dict[round(percent,1)] = float((band_arr >= percent).sum())
         cover_counts[band_names[band_num]] = frac_dict
@@ -163,24 +178,22 @@ def main():
     print(f"Creating COG {out_file}")
 
     units = ['PERCENT',
-                  'PERCENT',
-                  'PERCENT',
-                  'PERCENT',
-                  'UNITELESS']
+            'PERCENT',
+            'PERCENT',
+            'PERCENT',]
 
     descriptions=  ['SOIL PERCENT COVER',
-                     'VEGETATION PERCENT COVER',
-                     'WATER PERCENTCOVER',
-                     'SNOW/ICE PERCENT COVER',
-                     'BRIGHTNESS']
+                      'VEGETATION PERCENT COVER',
+                      'WATER PERCENTCOVER',
+                      'SNOW/ICE PERCENT COVER']
 
     # Set the output raster transform and projection properties
     driver = gdal.GetDriverByName("GTIFF")
     tiff = driver.Create(temp_file,
-                         frcov_gdal.RasterXSize,
-                         frcov_gdal.RasterYSize,
-                         frcov_gdal.RasterCount,
-                         gdal.GDT_Float32)
+                          frcov_gdal.RasterXSize,
+                          frcov_gdal.RasterYSize,
+                          4,
+                          gdal.GDT_Float32)
 
     tiff.SetGeoTransform(frcov_gdal.GetGeoTransform())
     tiff.SetProjection(frcov_gdal.GetProjection())
@@ -188,9 +201,8 @@ def main():
 
     # Write bands to file
     for i,band_name in enumerate(band_names):
-        in_band = frcov_gdal.GetRasterBand(i+1).ReadAsArray()
         out_band = tiff.GetRasterBand(i+1)
-        out_band.WriteArray(in_band)
+        out_band.WriteArray(bands[i])
         out_band.SetDescription(band_name)
         out_band.SetNoDataValue(no_data)
         out_band.SetMetadataItem("UNITS",units[i])
