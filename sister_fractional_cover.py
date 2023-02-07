@@ -158,7 +158,7 @@ def main():
     print(f"Generating quicklook to {frcov_ql_path}")
 
     no_data = band.GetNoDataValue()
-    rgb=  np.array(bands)
+    rgb=  np.array(bands)[:3]
     rgb[rgb == no_data] = np.nan
 
     rgb = np.moveaxis(rgb,0,-1).astype(float)
