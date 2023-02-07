@@ -17,18 +17,14 @@ inputs:
 # remove below this line if no inputs
 # rename and set algorithm input names accordingly
   file:
-    - name: l2a_rfl
+    - name: reflectance_dataset
       required: True
   config:
     - name: n_cores
       default: "1"
-    - name: refl_nodata
-      default: "None"
     - name: refl_scale
-      default: "None"
+      default: "none"
     - name: normalization
-      default: "None"
+      default: "none"
     - name: crid
       default: "000"
-    - name: _force_ingest
-      default: "True"
