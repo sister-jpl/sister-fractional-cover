@@ -32,15 +32,13 @@ register algorithms and submit jobs.  maap-py can be obtained by running:
 The sister-fractional-cover PGE takes the following arguments:
 
 
-| Argument      | Type   | Description                                                                        | Default |
-|---------------|--------|------------------------------------------------------------------------------------|---------|
-| l2a_rfl       | file   | S3 URL to the corrected reflectance dataset folder                                 | -       |
-| n_cores       | config | Number of cores for parallelization                                                | 1       |
-| refl_nodata   | config | Nodata value expected in input reflectance data                                    | None    |
-| refl_scale    | config | Scale image data (divide it by) this amount                                        | None    |
-| normalization | config | Flag to indicate the scaling type. Options = none, brightness, specific wavelength | None    |
-| crid          | config | Composite Release ID to tag file names                                             | 000     |
-| _force_ingest | config | Flag that allows overwriting existing files                                        | True    |
+| Argument            | Type   | Description                                                                        | Default |
+|---------------------|--------|------------------------------------------------------------------------------------|---------|
+| reflectance_dataset | file   | S3 URL to the corrected reflectance dataset folder                                 | -       |
+| n_cores             | config | Number of cores for parallelization                                                | 1       |
+| refl_scale          | config | Scale image data (divide it by) this amount                                        | none    |
+| normalization       | config | Flag to indicate the scaling type. Options = none, brightness, specific wavelength | none    |
+| crid                | config | Composite Release ID to tag file names                                             | 000     |
 
 ## Outputs
 
