@@ -28,8 +28,8 @@ def main():
     # Add metadata to runconfig
     corfl_basename = None
     for file in run_config["inputs"]["file"]:
-        if "l2a_rfl" in file:
-            corfl_basename = os.path.basename(file["l2a_rfl"])
+        if "reflectance_dataset" in file:
+            corfl_basename = os.path.basename(file["reflectance_dataset"])
 
     met_json_path = os.path.join("input", corfl_basename, f"{corfl_basename}.met.json")
     with open(met_json_path, "r") as f:
