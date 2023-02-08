@@ -162,10 +162,6 @@ def main():
     rgb[rgb == no_data] = np.nan
 
     rgb = np.moveaxis(rgb,0,-1).astype(float)
-    bottom = np.nanpercentile(rgb,5,axis = (0,1))
-    top = np.nanpercentile(rgb,95,axis = (0,1))
-    rgb = np.clip(rgb,bottom,top)
-    rgb = (rgb-np.nanmin(rgb,axis=(0,1)))/(np.nanmax(rgb,axis= (0,1))-np.nanmin(rgb,axis= (0,1)))
     rgb = (rgb*255).astype(np.uint8)
 
     im = Image.fromarray(rgb)
