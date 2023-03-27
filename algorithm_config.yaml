@@ -24,7 +24,5 @@ inputs:
       default: "1"
     - name: refl_scale
       default: "none"
-    - name: normalization
-      default: "none"
     - name: crid
       default: "000"

@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Created on Mon Mar 27 10:43:59 2023
+
+@author: achlus
+"""
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
 SISTER
 Space-based Imaging Spectroscopy and Thermal PathfindER
 Author: Winston Olson-Duvall
@@ -28,7 +36,6 @@ def get_frcov_basename(corfl_basename, crid):
     # Split, remove old CRID, and add new one
     tokens = tmp_basename.split("_")[:-1] + [str(crid)]
     return "_".join(tokens)
-
 
 def generate_metadata(run_config, frcov_met_json_path):
     # Create .met.json file from runconfig for fractional cover
@@ -90,58 +97,85 @@ def main():
 
     endmember_lib_path = f"{sister_frcov_dir}/data/veg_soil_water_snow_endmembers.csv"
     endmembers = pd.read_csv(endmember_lib_path)
-    #Exclude snow endmember for DESIS
-    if "DESIS" in corfl_img_path:
-        endmembers = endmembers[endmembers['class'] != 'snow']
-    endmembers.to_csv('endmembers.csv',index = False)
+
+    no_snow = endmembers[endmembers['class'] != 'snow']
+    no_snow.to_csv('endmembers_no_snow.csv',index = False)
+
+    no_water = endmembers[endmembers['class'] != 'water']
+    no_water.to_csv('endmembers_no_water.csv',index = False)
 
     # Build command and run unmix.jl
     unmix_exe = f"{specun_dir}/unmix.jl"
     log_path = f"output/{frcov_basename}.log"
 
-    # Add required args
-    cmd = ["julia"]
+    for endmember_file in ['no_snow','no_water']:
+        # Add required args
+        cmd = ["julia"]
 
-    # Add parallelization if n_cores > 1
-    if run_config["inputs"]["config"]["n_cores"] > 1:
-        cmd += ["-p", str(run_config["inputs"]["config"]["n_cores"])]
+        # Add parallelization if n_cores > 1
+        if run_config["inputs"]["config"]["n_cores"] > 1:
+            cmd += ["-p", str(run_config["inputs"]["config"]["n_cores"])]
 
-    cmd += [
-        unmix_exe,
-        corfl_img_path,
-        'endmembers.csv',
-        "class",
-        frcov_img_path,
-        "--mode=sma",
-        f"--log_file={log_path}",
-        f"--num_endmembers={len(endmembers)}",
-        f"--refl_nodata={rfl.no_data}",
-        f"--start_line={start_line}",
-        f"--end_line={end_line}",
-        f"--normalization={run_config['inputs']['config']['normalization']}",
-        f"--refl_scale={run_config['inputs']['config']['refl_scale']}"]
+        cmd += [
+            unmix_exe,
+            corfl_img_path,
+            f'endmembers_{endmember_file}.csv',
+            "class",
+            f"{frcov_img_path}_{endmember_file}",
+            "--mode=sma",
+            f"--log_file={log_path}",
+            "--num_endmembers=3",
+            f"--refl_nodata={rfl.no_data}",
+            f"--start_line={start_line}",
+            f"--end_line={end_line}",
+            "--normalization=brightness",
+            f"--refl_scale={run_config['inputs']['config']['refl_scale']}"]
 
-    print("Running unmix.jl command: " + " ".join(cmd))
-    subprocess.run(" ".join(cmd), shell=True)
+        print("Running unmix.jl command: " + " ".join(cmd))
+        subprocess.run(" ".join(cmd), shell=True)
 
-    frcov_img_file = f'{frcov_img_path}_fractional_cover'
-    frcov_gdal = gdal.Open(frcov_img_file)
 
+    no_snow_frcov_file = f'{frcov_img_path}_no_snow_fractional_cover'
+    no_snow_gdal = gdal.Open(no_snow_frcov_file)
+    no_snow_frcov  = no_snow_gdal.ReadAsArray()
+    no_snow_frcov[no_snow_frcov==rfl.no_data] = np.nan
+
+    no_water_frcov_file = f'{frcov_img_path}_no_water_fractional_cover'
+    no_water_gdal = gdal.Open(no_water_frcov_file)
+    no_water_frcov  = no_water_gdal.ReadAsArray()
+    no_water_frcov[no_water_frcov==rfl.no_data] = np.nan
+
+    water = (rfl.ndi(550,850) > 0) & (rfl.get_wave(550) < .15)
+
+    filter_frcov = np.zeros((rfl.lines,rfl.columns,4))
+    filter_frcov[water,:3] =no_snow_frcov[:3,water].T
+    filter_frcov[~water,0] =no_water_frcov[0,~water].T
+    filter_frcov[~water,1] =no_water_frcov[1,~water].T
+    filter_frcov[~water,3] =no_water_frcov[2,~water].T
+    filter_frcov[~rfl.mask['no_data']] = -9999
+
+    filter_frcov_file = f'{frcov_img_path}_fractional_cover'
     band_names = ['soil','vegetation','water','snow_ice']
+    header = rfl.get_header()
+    header['bands'] = 4
+    header['band names'] = band_names
+    header['wavelength'] = []
+    header['fwhm'] = []
+    header['bbl'] = []
 
-    bands = []
+    writer = ht.io.envi.WriteENVI(filter_frcov_file, header)
+    for band_num in range(4):
+        writer.write_band(filter_frcov[:,:,band_num], band_num)
+
     cover_counts = {}
 
     # Load bands and calculate cover percentile counts
     for band_num in range(0,4):
         frac_dict = {}
-
         if ("DESIS" in corfl_img_path) and (band_num ==3):
-            band_arr = np.zeros((frcov_gdal.RasterYSize,frcov_gdal.RasterXSize))
+            band_arr = np.zeros((rfl.lines,rfl.columns))
         else:
-            band = frcov_gdal.GetRasterBand(band_num+1)
-            band_arr = band.ReadAsArray()
-        bands.append(band_arr)
+            band_arr = filter_frcov[:,:,band_num]
         for percent in np.linspace(0,1,11):
             frac_dict[round(percent,1)] = float((band_arr >= percent).sum())
         cover_counts[band_names[band_num]] = frac_dict
@@ -157,18 +191,14 @@ def main():
     frcov_ql_path = f"output/{frcov_basename}.png"
     print(f"Generating quicklook to {frcov_ql_path}")
 
-    no_data = band.GetNoDataValue()
-    rgb=  np.array(bands)[:3]
-    rgb[rgb == no_data] = np.nan
-
-    rgb = np.moveaxis(rgb,0,-1).astype(float)
+    rgb=  np.array(filter_frcov[:,:,:3])
+    rgb[rgb == rfl.no_data] = np.nan
     rgb = (rgb*255).astype(np.uint8)
-
     im = Image.fromarray(rgb)
     im.save(frcov_ql_path)
 
     #Convert to COG
-    temp_file =  f'{frcov_img_file}.tif'
+    temp_file =  'work/temp_frcover.tif'
     out_file =  f"output/{frcov_basename}.tif"
 
     print(f"Creating COG {out_file}")
@@ -186,21 +216,21 @@ def main():
     # Set the output raster transform and projection properties
     driver = gdal.GetDriverByName("GTIFF")
     tiff = driver.Create(temp_file,
-                          frcov_gdal.RasterXSize,
-                          frcov_gdal.RasterYSize,
+                          no_snow_gdal.RasterXSize,
+                          no_snow_gdal.RasterYSize,
                           4,
                           gdal.GDT_Float32)
 
-    tiff.SetGeoTransform(frcov_gdal.GetGeoTransform())
-    tiff.SetProjection(frcov_gdal.GetProjection())
+    tiff.SetGeoTransform(no_snow_gdal.GetGeoTransform())
+    tiff.SetProjection(no_snow_gdal.GetProjection())
     tiff.SetMetadataItem("DESCRIPTION","FRACTIONAL COVER")
 
     # Write bands to file
     for i,band_name in enumerate(band_names):
         out_band = tiff.GetRasterBand(i+1)
-        out_band.WriteArray(bands[i])
+        out_band.WriteArray(filter_frcov[:,:,i])
         out_band.SetDescription(band_name)
-        out_band.SetNoDataValue(no_data)
+        out_band.SetNoDataValue(rfl.no_data)
         out_band.SetMetadataItem("UNITS",units[i])
         out_band.SetMetadataItem("DESCRIPTION",descriptions[i])
     del tiff, driver
