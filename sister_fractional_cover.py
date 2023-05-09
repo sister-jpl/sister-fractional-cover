@@ -145,7 +145,7 @@ def main():
     no_water_frcov  = no_water_gdal.ReadAsArray()
     no_water_frcov[no_water_frcov==rfl.no_data] = np.nan
 
-    water = (rfl.ndi(550,850) > 0) & (rfl.get_wave(550) < .15)
+    water = (rfl.ndi(550,850) > 0) & (rfl.get_wave(900) < .15)
 
     filter_frcov = np.zeros((rfl.lines,rfl.columns,4))
     filter_frcov[water,:3] =no_snow_frcov[:3,water].T
