@@ -108,7 +108,7 @@ def main():
     unmix_exe = f"{specun_dir}/unmix.jl"
     log_path = f"output/{frcov_basename}.log"
 
-    snow_clim_file = f'{sister_frcov_dir}/LIN10A1_snow_climatology_13day.tif'
+    snow_clim_file = f'{os.path.dirname(sister_frcov_dir)}/LIN10A1_snow_climatology_13day.tif'
     snow_clim = gdal.Open(snow_clim_file)
     snow = snow_clim.GetRasterBand(1)
     snow_days = np.arange(1,365,13)
