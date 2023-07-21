@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Mar 27 10:43:59 2023
-
-@author: achlus
-"""
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
 SISTER
 Space-based Imaging Spectroscopy and Thermal PathfindER
 Author: Winston Olson-Duvall
 """
 
+import datetime as dt
 import json
 import os
 import subprocess
@@ -29,6 +22,13 @@ except:
     import gdal
 from PIL import Image
 
+def find_nearest_day(day, subset_days):
+    distances = []
+    for special_day in subset_days:
+        diff = (special_day - day) % 365
+        distances.append(min(diff, 365 - diff))
+    nearest_day = subset_days[distances.index(min(distances))]
+    return np.argwhere(nearest_day==subset_days)[0][0]
 
 def get_frcov_basename(corfl_basename, crid):
     # Replace product type
@@ -108,7 +108,38 @@ def main():
     unmix_exe = f"{specun_dir}/unmix.jl"
     log_path = f"output/{frcov_basename}.log"
 
-    for endmember_file in ['no_snow','no_water']:
+    snow_clim_file = f'{os.path.dirname(sister_frcov_dir)}/LIN10A1_snow_climatology_13day.tif'
+    snow_clim = gdal.Open(snow_clim_file)
+    snow = snow_clim.GetRasterBand(1)
+    snow_days = np.arange(1,365,13)
+
+    ulx,pixel_size,_,uly,_,_ = snow_clim.GetGeoTransform()
+
+    bbox_min_x,bbox_min_y = np.min(run_config['metadata']['bounding_box'],axis=0)
+    bbox_max_x,bbox_max_y = np.max(run_config['metadata']['bounding_box'],axis=0)
+
+    x_offset = int((bbox_min_x-ulx)/pixel_size)
+    width = int((bbox_max_x-ulx)/pixel_size) -x_offset
+
+    y_offset = int((uly-bbox_max_y)/pixel_size)
+    height = int((uly-bbox_min_y)/pixel_size) - y_offset
+
+    subset = snow.ReadAsArray(x_offset, y_offset,
+                              width, height)
+
+    datetime = dt.datetime.strptime(run_config['metadata']['start_time'], '%Y-%m-%dT%H:%M:%SZ')
+    doy = datetime.timetuple().tm_yday
+    bit = find_nearest_day(doy, snow_days)
+    snow_mask =(subset >> bit) &1
+    snow_present = snow_mask.sum() >0
+
+    if snow_present:
+        print('Snow expected')
+        endmember_files = ['no_water','no_snow']
+    else:
+        endmember_files = ['no_snow']
+
+    for endmember_file in endmember_files:
         # Add required args
         cmd = ["julia"]
 
@@ -140,20 +171,25 @@ def main():
     no_snow_frcov  = no_snow_gdal.ReadAsArray()
     no_snow_frcov[no_snow_frcov==rfl.no_data] = np.nan
 
-    no_water_frcov_file = f'{frcov_img_path}_no_water_fractional_cover'
-    no_water_gdal = gdal.Open(no_water_frcov_file)
-    no_water_frcov  = no_water_gdal.ReadAsArray()
-    no_water_frcov[no_water_frcov==rfl.no_data] = np.nan
-
-    water = (rfl.ndi(550,850) > 0) & (rfl.get_wave(900) < .15)
-
     filter_frcov = np.zeros((rfl.lines,rfl.columns,4))
-    filter_frcov[water,:3] =no_snow_frcov[:3,water].T
-    filter_frcov[~water,0] =no_water_frcov[0,~water].T
-    filter_frcov[~water,1] =no_water_frcov[1,~water].T
-    filter_frcov[~water,3] =no_water_frcov[2,~water].T
-    filter_frcov[~rfl.mask['no_data']] = -9999
 
+    if snow_present:
+        no_water_frcov_file = f'{frcov_img_path}_no_water_fractional_cover'
+        no_water_gdal = gdal.Open(no_water_frcov_file)
+        no_water_frcov  = no_water_gdal.ReadAsArray()
+        no_water_frcov[no_water_frcov==rfl.no_data] = np.nan
+
+        water = (rfl.ndi(550,850) > 0) & (rfl.get_wave(900) < .15)
+
+        filter_frcov[water,:3] =no_snow_frcov[:3,water].T
+        filter_frcov[~water,0] =no_water_frcov[0,~water].T
+        filter_frcov[~water,1] =no_water_frcov[1,~water].T
+        filter_frcov[~water,3] =no_water_frcov[2,~water].T
+
+    else:
+      filter_frcov[:,:,:3]  = np.moveaxis(no_snow_frcov[:3],0,-1)
+
+    filter_frcov[~rfl.mask['no_data']] = -9999
     filter_frcov_file = f'{frcov_img_path}_fractional_cover'
     band_names = ['soil','vegetation','water','snow_ice']
     header = rfl.get_header()
