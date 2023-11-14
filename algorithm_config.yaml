@@ -23,7 +23,7 @@ inputs:
     - name: n_cores
       default: "1"
     - name: refl_scale
-      default: "none"
+      default: "1.0"
     - name: crid
       default: "000"
     - name: experimental
