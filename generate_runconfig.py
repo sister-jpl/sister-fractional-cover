@@ -6,6 +6,7 @@ Space-based Imaging Spectroscopy and Thermal PathfindER
 Author: Adam Chlus, Winston Olson-Duvall
 """
 
+import argparse
 import json
 import os
 import sys
@@ -18,18 +19,27 @@ def main():
 
     """
 
-    inputs_json = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Parse inputs to create runconfig.json")
+    parser.add_argument("--reflectance_dataset", help="Path to reflectance dataset")
+    parser.add_argument("--n_cores", help="Number of cores to use for parallelization")
+    parser.add_argument("--refl_scale", help="Reflectance scale value")
+    parser.add_argument("--crid", help="CRID value")
+    parser.add_argument("--experimental", help="If true then designates data as experiemntal")
+    args = parser.parse_args()
 
-    # Add inputs to runconfig
-    with open(inputs_json, "r") as in_file:
-        inputs = json.load(in_file)
-    run_config = {"inputs": inputs}
+    run_config = {
+        "inputs": {
+            "reflectance_dataset": args.reflectance_dataset,
+            "n_cores": int(args.n_cores),
+            "refl_scale": args.refl_scale,
+            "crid": args.crid,
+        }
+    }
+
+    run_config["inputs"]["experimental"] = True if args.experimental.lower() == "true" else False
 
     # Add metadata to runconfig
-    corfl_basename = None
-    for file in run_config["inputs"]["file"]:
-        if "reflectance_dataset" in file:
-            corfl_basename = os.path.basename(file["reflectance_dataset"])
+    corfl_basename = os.path.basename(run_config["inputs"]["reflectance_dataset"])
 
     met_json_path = os.path.join("input", corfl_basename, f"{corfl_basename}.met.json")
     with open(met_json_path, "r") as f:

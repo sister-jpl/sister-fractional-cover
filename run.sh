@@ -27,7 +27,7 @@ SPECUN_DIR="$APP_DIR/SpectralUnmixing"
 export JULIA_PROJECT=$SPECUN_DIR
 
 # Generate runconfig
-python ${REPO_DIR}/generate_runconfig.py inputs.json
+python ${REPO_DIR}/generate_runconfig.py "${@:1}"
 
 # Execute isofit
 python ${REPO_DIR}/sister_fractional_cover.py runconfig.json

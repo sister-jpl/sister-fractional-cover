@@ -7,6 +7,7 @@ Author: Winston Olson-Duvall
 """
 
 import datetime as dt
+import glob
 import json
 import os
 import subprocess
@@ -37,12 +38,12 @@ def get_frcov_basename(corfl_basename, crid):
     tokens = tmp_basename.split("_")[:-1] + [str(crid)]
     return "_".join(tokens)
 
-def generate_metadata(run_config, frcov_met_json_path):
+def generate_metadata(run_config, frcov_met_json_path, disclaimer):
     # Create .met.json file from runconfig for fractional cover
     metadata = run_config["metadata"]
     metadata["product"] = "FRCOV"
     metadata["processing_level"] = "L2B"
-    metadata["description"] = "Fractional cover (soil, vegetation, water, snow)"
+    metadata["description"] = f"{disclaimer}Fractional cover (soil, vegetation, water, snow)"
     with open(frcov_met_json_path, "w") as f:
         json.dump(metadata, f, indent=4)
 
@@ -58,6 +59,11 @@ def main():
     print("Reading in runconfig")
     with open(in_file, "r") as f:
         run_config = json.load(f)
+    experimental = run_config['inputs']['experimental']
+    if experimental:
+        disclaimer = "(DISCLAIMER: THIS DATA IS EXPERIMENTAL AND NOT INTENDED FOR SCIENTIFIC USE) "
+    else:
+        disclaimer = ""
 
     # Make work dir
     if not os.path.exists("work"):
@@ -73,12 +79,8 @@ def main():
     sister_frcov_dir = os.path.abspath(os.path.dirname(__file__))
     specun_dir = os.path.join(os.path.dirname(sister_frcov_dir), "SpectralUnmixing")
 
-    corfl_basename = None
-    for file in run_config["inputs"]["file"]:
-        if "reflectance_dataset" in file:
-            corfl_basename = os.path.basename(file["reflectance_dataset"])
-    frcov_basename = get_frcov_basename(corfl_basename, run_config["inputs"]["config"]["crid"])
-
+    corfl_basename = os.path.basename(run_config["inputs"]["reflectance_dataset"])
+    frcov_basename = get_frcov_basename(corfl_basename, run_config["inputs"]["crid"])
     corfl_img_path = f"work/{corfl_basename}"
     corfl_hdr_path = f"work/{corfl_basename}.hdr"
     frcov_img_path = f"work/{frcov_basename}"
@@ -144,8 +146,8 @@ def main():
         cmd = ["julia"]
 
         # Add parallelization if n_cores > 1
-        if run_config["inputs"]["config"]["n_cores"] > 1:
-            cmd += ["-p", str(run_config["inputs"]["config"]["n_cores"])]
+        if run_config["inputs"]["n_cores"] > 1:
+            cmd += ["-p", str(run_config["inputs"]["n_cores"])]
 
         cmd += [
             unmix_exe,
@@ -160,7 +162,7 @@ def main():
             f"--start_line={start_line}",
             f"--end_line={end_line}",
             "--normalization=brightness",
-            f"--refl_scale={run_config['inputs']['config']['refl_scale']}"]
+            f"--refl_scale={run_config['inputs']['refl_scale']}"]
 
         print("Running unmix.jl command: " + " ".join(cmd))
         subprocess.run(" ".join(cmd), shell=True)
@@ -221,7 +223,7 @@ def main():
     # Generate metadata in .met.json file
     frcov_met_json_path = f"output/{frcov_basename}.met.json"
     print(f"Generating metadata from runconfig to {frcov_met_json_path}")
-    generate_metadata(run_config, frcov_met_json_path)
+    generate_metadata(run_config, frcov_met_json_path, disclaimer)
 
     # Generate quicklook
     frcov_ql_path = f"output/{frcov_basename}.png"
@@ -259,7 +261,7 @@ def main():
 
     tiff.SetGeoTransform(no_snow_gdal.GetGeoTransform())
     tiff.SetProjection(no_snow_gdal.GetProjection())
-    tiff.SetMetadataItem("DESCRIPTION","FRACTIONAL COVER")
+    tiff.SetMetadataItem("DESCRIPTION", f"{disclaimer}FRACTIONAL COVER")
 
     # Write bands to file
     for i,band_name in enumerate(band_names):
@@ -278,6 +280,12 @@ def main():
     print(f"Copying runconfig to {out_runconfig}")
     shutil.copyfile(in_file,
                     out_runconfig)
+
+    # If experimental, prefix filenames with "EXPERIMENTAL-"
+    if experimental:
+        for file in glob.glob(f"output/SISTER*"):
+            shutil.move(file, f"output/EXPERIMENTAL-{os.path.basename(file)}")
+
 
 if __name__ == "__main__":
     main()
