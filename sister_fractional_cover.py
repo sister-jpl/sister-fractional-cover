@@ -39,6 +39,7 @@ def get_frcov_basename(corfl_basename, crid):
     tokens = tmp_basename.split("_")[:-1] + [str(crid)]
     return "_".join(tokens)
 
+
 def generate_stac_metadata(basename, description, in_meta):
 
     out_meta = {}
@@ -355,42 +356,6 @@ def main():
         for asset in item.assets.values():
             fname = os.path.basename(asset.href)
             shutil.move(f"output/{fname}", f"output/{frcov_basename}/{item.id}/{fname}")
-
-
-def generate_stac_metadata(basename, description, in_meta):
-
-    out_meta = {}
-    out_meta['id'] = basename
-    out_meta['start_datetime'] = dt.datetime.strptime(in_meta['start_time'], "%Y-%m-%dT%H:%M:%SZ")
-    out_meta['end_datetime'] = dt.datetime.strptime(in_meta['end_time'], "%Y-%m-%dT%H:%M:%SZ")
-    # Split corner coordinates string into list
-    geometry = in_meta['bounding_box']
-    # Add first coord to the end of the list to close the polygon
-    geometry.append(geometry[0])
-    out_meta['geometry'] = geometry
-    out_meta['properties'] = {
-        'sensor': in_meta['sensor'],
-        'description': description,
-        'product': basename.split('_')[4],
-        'processing_level': basename.split('_')[2]
-    }
-    return out_meta
-
-
-def create_item(metadata, assets):
-    item = pystac.Item(
-        id=metadata['id'],
-        datetime=metadata['start_datetime'],
-        start_datetime=metadata['start_datetime'],
-        end_datetime=metadata['end_datetime'],
-        geometry=metadata['geometry'],
-        bbox=None,
-        properties=metadata['properties']
-    )
-    # Add assets
-    for key, href in assets.items():
-        item.add_asset(key=key, asset=pystac.Asset(href=href))
-    return item
 
 
 if __name__ == "__main__":
