@@ -18,6 +18,7 @@ specun_dir="$app_dir/SpectralUnmixing"
 conda create -n spectral-unmixing -y -c conda-forge julia=1.7 python=3.8 gdal=3.6.0 pandas=2.0.1 awscli
 source activate spectral-unmixing
 pip install Pillow
+pip install pystac==1.8.4
 
 # Download snow climatology dataset
 aws s3 cp s3://sister-ops-registry/packages/LIN10A1_snow_climatology_13day.tif .

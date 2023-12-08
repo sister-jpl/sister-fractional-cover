@@ -16,6 +16,7 @@ import sys
 import hytools as ht
 import pandas as pd
 import numpy as np
+import pystac
 
 try:
     from osgeo import gdal
@@ -220,11 +221,6 @@ def main():
 
     run_config["metadata"]["cover_percentile_counts"] = cover_counts
 
-    # Generate metadata in .met.json file
-    frcov_met_json_path = f"output/{frcov_basename}.met.json"
-    print(f"Generating metadata from runconfig to {frcov_met_json_path}")
-    generate_metadata(run_config, frcov_met_json_path, disclaimer)
-
     # Generate quicklook
     frcov_ql_path = f"output/{frcov_basename}.png"
     print(f"Generating quicklook to {frcov_ql_path}")
@@ -261,7 +257,8 @@ def main():
 
     tiff.SetGeoTransform(no_snow_gdal.GetGeoTransform())
     tiff.SetProjection(no_snow_gdal.GetProjection())
-    tiff.SetMetadataItem("DESCRIPTION", f"{disclaimer}FRACTIONAL COVER")
+    fc_description = f"{disclaimer}FRACTIONAL COVER"
+    tiff.SetMetadataItem("DESCRIPTION", fc_description)
 
     # Write bands to file
     for i,band_name in enumerate(band_names):
@@ -276,6 +273,7 @@ def main():
     os.system(f"gdaladdo -minsize 900 {temp_file}")
     os.system(f"gdal_translate {temp_file} {out_file} -co COMPRESS=LZW -co TILED=YES -co COPY_SRC_OVERVIEWS=YES")
 
+
     out_runconfig =  f"output/{frcov_basename}.runconfig.json"
     print(f"Copying runconfig to {out_runconfig}")
     shutil.copyfile(in_file,
@@ -285,6 +283,87 @@ def main():
     if experimental:
         for file in glob.glob(f"output/SISTER*"):
             shutil.move(file, f"output/EXPERIMENTAL-{os.path.basename(file)}")
+
+    # Update the path variables if now experimental
+    frcov_file = glob.glob("output/*%s.tif" % run_config['inputs']['crid'])[0]
+    out_runconfig = glob.glob("output/*%s.runconfig.json" % run_config['inputs']['crid'])[0]
+    log_path = glob.glob("output/*%s.log" % run_config['inputs']['crid'])[0]
+    frcov_basename = os.path.basename(frcov_file)[:-4]
+
+    # Generate STAC
+    catalog = pystac.Catalog(id=corfl_basename,
+                             description=f'{disclaimer}This catalog contains the output data products of the SISTER '
+                                         f'fractional cover PGE, including a fractional cover cloud-optimized GeoTIFF. '
+                                         f'Execution artifacts including the runconfig file and execution '
+                                         f'log file are included with the fractional cover data.')
+
+    # Add items for data products
+    tif_files = glob.glob("output/*SISTER*.tif")
+    tif_files.sort()
+    for tif_file in tif_files:
+        metadata = generate_stac_metadata(frcov_basename, fc_description, run_config["metadata"])
+        assets = {
+            "cog": f"./{os.path.basename(tif_file)}",
+        }
+        # If it's the fractional cover product, then add png, runconfig, and log
+        if os.path.basename(tif_file) == f"{frcov_basename}.tif":
+            png_file = tif_file.replace(".tif", ".png")
+            assets["browse"] = f"./{os.path.basename(png_file)}"
+            assets["runconfig"] = f"./{os.path.basename(out_runconfig)}"
+            if os.path.exists(log_path):
+                assets["log"] = f"./{os.path.basename(log_path)}"
+        item = create_item(metadata, assets)
+        catalog.add_item(item)
+
+    # set catalog hrefs
+    catalog.normalize_hrefs(f"./output/{frcov_basename}")
+
+    # save the catalog
+    catalog.describe()
+    catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+    print("Catalog HREF: ", catalog.get_self_href())
+
+    # Move the assets from the output directory to the stac item directories
+    for item in catalog.get_items():
+        for asset in item.assets.values():
+            fname = os.path.basename(asset.href)
+            shutil.move(f"output/{fname}", f"output/{frcov_basename}/{item.id}/{fname}")
+
+
+def generate_stac_metadata(basename, description, in_meta):
+
+    out_meta = {}
+    out_meta['id'] = basename
+    out_meta['start_datetime'] = dt.datetime.strptime(in_meta['start_time'], "%Y-%m-%dT%H:%M:%SZ")
+    out_meta['end_datetime'] = dt.datetime.strptime(in_meta['end_time'], "%Y-%m-%dT%H:%M:%SZ")
+    # Split corner coordinates string into list
+    geometry = in_meta['bounding box']
+    # Add first coord to the end of the list to close the polygon
+    geometry.append(geometry[0])
+    out_meta['geometry'] = geometry
+    out_meta['properties'] = {
+        'sensor': in_meta['sensor'],
+        'description': description,
+        'product': basename.split('_')[4],
+        'processing_level': basename.split('_')[2]
+    }
+    return out_meta
+
+
+def create_item(metadata, assets):
+    item = pystac.Item(
+        id=metadata['id'],
+        datetime=metadata['start_datetime'],
+        start_datetime=metadata['start_datetime'],
+        end_datetime=metadata['end_datetime'],
+        geometry=metadata['geometry'],
+        bbox=None,
+        properties=metadata['properties']
+    )
+    # Add assets
+    for key, href in assets.items():
+        item.add_asset(key=key, asset=pystac.Asset(href=href))
+    return item
 
 
 if __name__ == "__main__":
