@@ -54,7 +54,7 @@ def generate_stac_metadata(basename, description, in_meta):
     out_meta['properties'] = {
         'sensor': in_meta['sensor'],
         'description': description,
-        'product': basename.split('_')[4],
+        'product': basename.split('_')[3],
         'processing_level': basename.split('_')[2]
     }
     return out_meta
