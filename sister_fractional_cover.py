@@ -319,7 +319,7 @@ def main():
     frcov_basename = os.path.basename(frcov_file)[:-4]
 
     # Generate STAC
-    catalog = pystac.Catalog(id=corfl_basename,
+    catalog = pystac.Catalog(id=frcov_basename,
                              description=f'{disclaimer}This catalog contains the output data products of the SISTER '
                                          f'fractional cover PGE, including a fractional cover cloud-optimized GeoTIFF. '
                                          f'Execution artifacts including the runconfig file and execution '
