@@ -46,7 +46,7 @@ def generate_stac_metadata(basename, description, in_meta):
     out_meta['id'] = basename
     out_meta['start_datetime'] = dt.datetime.strptime(in_meta['start_datetime'], "%Y-%m-%dT%H:%M:%SZ")
     out_meta['end_datetime'] = dt.datetime.strptime(in_meta['end_datetime'], "%Y-%m-%dT%H:%M:%SZ")
-    out_meta['geometry'] = in_meta['bounding_box']
+    out_meta['geometry'] = in_meta['geometry']
     out_meta['properties'] = {
         'sensor': in_meta['sensor'],
         'description': description,
