@@ -44,18 +44,15 @@ def generate_stac_metadata(basename, description, in_meta):
 
     out_meta = {}
     out_meta['id'] = basename
-    out_meta['start_datetime'] = dt.datetime.strptime(in_meta['start_time'], "%Y-%m-%dT%H:%M:%SZ")
-    out_meta['end_datetime'] = dt.datetime.strptime(in_meta['end_time'], "%Y-%m-%dT%H:%M:%SZ")
-    # Split corner coordinates string into list
-    geometry = in_meta['bounding_box'].copy()
-    # Add first coord to the end of the list to close the polygon
-    geometry.append(geometry[0])
-    out_meta['geometry'] = geometry
+    out_meta['start_datetime'] = dt.datetime.strptime(in_meta['start_datetime'], "%Y-%m-%dT%H:%M:%SZ")
+    out_meta['end_datetime'] = dt.datetime.strptime(in_meta['end_datetime'], "%Y-%m-%dT%H:%M:%SZ")
+    out_meta['geometry'] = in_meta['bounding_box']
     out_meta['properties'] = {
         'sensor': in_meta['sensor'],
         'description': description,
         'product': basename.split('_')[3],
-        'processing_level': basename.split('_')[2]
+        'processing_level': basename.split('_')[2],
+        "cover_percentile_counts": in_meta["cover_percentile_counts"]
     }
     return out_meta
 
@@ -146,8 +143,8 @@ def main():
 
     ulx,pixel_size,_,uly,_,_ = snow_clim.GetGeoTransform()
 
-    bbox_min_x,bbox_min_y = np.min(run_config['metadata']['bounding_box'],axis=0)
-    bbox_max_x,bbox_max_y = np.max(run_config['metadata']['bounding_box'],axis=0)
+    bbox_min_x,bbox_min_y = np.min(run_config['metadata']['geometry'][:4],axis=0)
+    bbox_max_x,bbox_max_y = np.max(run_config['metadata']['geometry'][:4],axis=0)
 
     x_offset = int((bbox_min_x-ulx)/pixel_size)
     width = int((bbox_max_x-ulx)/pixel_size) -x_offset
@@ -158,7 +155,7 @@ def main():
     subset = snow.ReadAsArray(x_offset, y_offset,
                               width, height)
 
-    datetime = dt.datetime.strptime(run_config['metadata']['start_time'], '%Y-%m-%dT%H:%M:%SZ')
+    datetime = dt.datetime.strptime(run_config['metadata']['start_datetime'], '%Y-%m-%dT%H:%M:%SZ')
     doy = datetime.timetuple().tm_yday
     bit = find_nearest_day(doy, snow_days)
     snow_mask =(subset >> bit) &1
