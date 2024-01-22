@@ -47,11 +47,13 @@ def generate_stac_metadata(basename, description, in_meta):
     out_meta['start_datetime'] = dt.datetime.strptime(in_meta['start_datetime'], "%Y-%m-%dT%H:%M:%SZ")
     out_meta['end_datetime'] = dt.datetime.strptime(in_meta['end_datetime'], "%Y-%m-%dT%H:%M:%SZ")
     out_meta['geometry'] = in_meta['geometry']
+    base_tokens = basename.split('_')
+    out_meta['collection'] = f"SISTER_{base_tokens[1]}_{base_tokens[2]}_{base_tokens[3]}_{base_tokens[5]}"
     out_meta['properties'] = {
         'sensor': in_meta['sensor'],
         'description': description,
-        'product': basename.split('_')[3],
-        'processing_level': basename.split('_')[2],
+        'product': base_tokens[3],
+        'processing_level': base_tokens[2],
         "cover_percentile_counts": in_meta["cover_percentile_counts"]
     }
     return out_meta
@@ -64,6 +66,7 @@ def create_item(metadata, assets):
         start_datetime=metadata['start_datetime'],
         end_datetime=metadata['end_datetime'],
         geometry=metadata['geometry'],
+        collection=metadata['collection'],
         bbox=None,
         properties=metadata['properties']
     )
@@ -112,8 +115,8 @@ def main():
     frcov_img_path = f"work/{frcov_basename}"
 
     # Copy the input files into the work directory (don't use .bin)
-    shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.bin",corfl_img_path)
-    shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.hdr",corfl_hdr_path)
+    shutil.copyfile(f"{run_config['inputs']['reflectance_dataset']}/{corfl_basename}.bin", corfl_img_path)
+    shutil.copyfile(f"{run_config['inputs']['reflectance_dataset']}/{corfl_basename}.hdr", corfl_hdr_path)
 
     #Load reflectance im
     rfl = ht.HyTools()
@@ -348,11 +351,13 @@ def main():
     catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
     print("Catalog HREF: ", catalog.get_self_href())
 
-    # Move the assets from the output directory to the stac item directories
+    # Move the assets from the output directory to the stac item directories and create empty .met.json files
     for item in catalog.get_items():
         for asset in item.assets.values():
             fname = os.path.basename(asset.href)
             shutil.move(f"output/{fname}", f"output/{frcov_basename}/{item.id}/{fname}")
+        with open(f"output/{frcov_basename}/{item.id}/{item.id}.met.json", mode="w"):
+            pass
 
 
 if __name__ == "__main__":
