@@ -146,8 +146,8 @@ def main():
 
     ulx,pixel_size,_,uly,_,_ = snow_clim.GetGeoTransform()
 
-    bbox_min_x,bbox_min_y = np.min(run_config['metadata']['geometry'][:4],axis=0)
-    bbox_max_x,bbox_max_y = np.max(run_config['metadata']['geometry'][:4],axis=0)
+    bbox_min_x,bbox_min_y = np.min(run_config['metadata']['geometry']['coordinates'][:4],axis=0)
+    bbox_max_x,bbox_max_y = np.max(run_config['metadata']['geometry']['coordinates'][:4],axis=0)
 
     x_offset = int((bbox_min_x-ulx)/pixel_size)
     width = int((bbox_max_x-ulx)/pixel_size) -x_offset
