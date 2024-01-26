@@ -21,10 +21,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="Parse inputs to create runconfig.json")
     parser.add_argument("--reflectance_dataset", help="Path to reflectance dataset")
-    parser.add_argument("--n_cores", help="Number of cores to use for parallelization")
-    parser.add_argument("--refl_scale", help="Reflectance scale value")
-    parser.add_argument("--crid", help="CRID value")
-    parser.add_argument("--experimental", help="If true then designates data as experiemntal")
+    parser.add_argument("--n_cores", help="Number of cores to use for parallelization", default="1")
+    parser.add_argument("--refl_scale", help="Reflectance scale value", default="1.0")
+    parser.add_argument("--crid", help="CRID value", default="000")
+    parser.add_argument("--experimental", help="If true then designates data as experiemntal", default="True")
     args = parser.parse_args()
 
     run_config = {
