@@ -7,6 +7,7 @@ Author: Winston Olson-Duvall
 """
 
 import datetime as dt
+import glob
 import json
 import os
 import subprocess
@@ -15,6 +16,7 @@ import sys
 import hytools as ht
 import pandas as pd
 import numpy as np
+import pystac
 
 try:
     from osgeo import gdal
@@ -37,14 +39,42 @@ def get_frcov_basename(corfl_basename, crid):
     tokens = tmp_basename.split("_")[:-1] + [str(crid)]
     return "_".join(tokens)
 
-def generate_metadata(run_config, frcov_met_json_path):
-    # Create .met.json file from runconfig for fractional cover
-    metadata = run_config["metadata"]
-    metadata["product"] = "FRCOV"
-    metadata["processing_level"] = "L2B"
-    metadata["description"] = "Fractional cover (soil, vegetation, water, snow)"
-    with open(frcov_met_json_path, "w") as f:
-        json.dump(metadata, f, indent=4)
+
+def generate_stac_metadata(basename, description, in_meta):
+
+    out_meta = {}
+    out_meta['id'] = basename
+    out_meta['start_datetime'] = dt.datetime.strptime(in_meta['start_datetime'], "%Y-%m-%dT%H:%M:%SZ")
+    out_meta['end_datetime'] = dt.datetime.strptime(in_meta['end_datetime'], "%Y-%m-%dT%H:%M:%SZ")
+    out_meta['geometry'] = in_meta['geometry']
+    base_tokens = basename.split('_')
+    out_meta['collection'] = f"SISTER_{base_tokens[1]}_{base_tokens[2]}_{base_tokens[3]}_{base_tokens[5]}"
+    out_meta['properties'] = {
+        'sensor': in_meta['sensor'],
+        'description': description,
+        'product': base_tokens[3],
+        'processing_level': base_tokens[2],
+        "cover_percentile_counts": in_meta["cover_percentile_counts"]
+    }
+    return out_meta
+
+
+def create_item(metadata, assets):
+    item = pystac.Item(
+        id=metadata['id'],
+        datetime=metadata['start_datetime'],
+        start_datetime=metadata['start_datetime'],
+        end_datetime=metadata['end_datetime'],
+        geometry=metadata['geometry'],
+        collection=metadata['collection'],
+        bbox=None,
+        properties=metadata['properties']
+    )
+    # Add assets
+    for key, href in assets.items():
+        item.add_asset(key=key, asset=pystac.Asset(href=href))
+    return item
+
 
 def main():
     """
@@ -58,6 +88,11 @@ def main():
     print("Reading in runconfig")
     with open(in_file, "r") as f:
         run_config = json.load(f)
+    experimental = run_config['inputs']['experimental']
+    if experimental:
+        disclaimer = "(DISCLAIMER: THIS DATA IS EXPERIMENTAL AND NOT INTENDED FOR SCIENTIFIC USE) "
+    else:
+        disclaimer = ""
 
     # Make work dir
     if not os.path.exists("work"):
@@ -73,19 +108,15 @@ def main():
     sister_frcov_dir = os.path.abspath(os.path.dirname(__file__))
     specun_dir = os.path.join(os.path.dirname(sister_frcov_dir), "SpectralUnmixing")
 
-    corfl_basename = None
-    for file in run_config["inputs"]["file"]:
-        if "reflectance_dataset" in file:
-            corfl_basename = os.path.basename(file["reflectance_dataset"])
-    frcov_basename = get_frcov_basename(corfl_basename, run_config["inputs"]["config"]["crid"])
-
+    corfl_basename = os.path.basename(run_config["inputs"]["reflectance_dataset"])
+    frcov_basename = get_frcov_basename(corfl_basename, run_config["inputs"]["crid"])
     corfl_img_path = f"work/{corfl_basename}"
     corfl_hdr_path = f"work/{corfl_basename}.hdr"
     frcov_img_path = f"work/{frcov_basename}"
 
     # Copy the input files into the work directory (don't use .bin)
-    shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.bin",corfl_img_path)
-    shutil.copyfile(f"input/{corfl_basename}/{corfl_basename}.hdr",corfl_hdr_path)
+    shutil.copyfile(f"{run_config['inputs']['reflectance_dataset']}/{corfl_basename}.bin", corfl_img_path)
+    shutil.copyfile(f"{run_config['inputs']['reflectance_dataset']}/{corfl_basename}.hdr", corfl_hdr_path)
 
     #Load reflectance im
     rfl = ht.HyTools()
@@ -115,8 +146,8 @@ def main():
 
     ulx,pixel_size,_,uly,_,_ = snow_clim.GetGeoTransform()
 
-    bbox_min_x,bbox_min_y = np.min(run_config['metadata']['bounding_box'],axis=0)
-    bbox_max_x,bbox_max_y = np.max(run_config['metadata']['bounding_box'],axis=0)
+    bbox_min_x,bbox_min_y = np.min(run_config['metadata']['geometry']['coordinates'][:4],axis=0)
+    bbox_max_x,bbox_max_y = np.max(run_config['metadata']['geometry']['coordinates'][:4],axis=0)
 
     x_offset = int((bbox_min_x-ulx)/pixel_size)
     width = int((bbox_max_x-ulx)/pixel_size) -x_offset
@@ -127,7 +158,7 @@ def main():
     subset = snow.ReadAsArray(x_offset, y_offset,
                               width, height)
 
-    datetime = dt.datetime.strptime(run_config['metadata']['start_time'], '%Y-%m-%dT%H:%M:%SZ')
+    datetime = dt.datetime.strptime(run_config['metadata']['start_datetime'], '%Y-%m-%dT%H:%M:%SZ')
     doy = datetime.timetuple().tm_yday
     bit = find_nearest_day(doy, snow_days)
     snow_mask =(subset >> bit) &1
@@ -144,8 +175,8 @@ def main():
         cmd = ["julia"]
 
         # Add parallelization if n_cores > 1
-        if run_config["inputs"]["config"]["n_cores"] > 1:
-            cmd += ["-p", str(run_config["inputs"]["config"]["n_cores"])]
+        if run_config["inputs"]["n_cores"] > 1:
+            cmd += ["-p", str(run_config["inputs"]["n_cores"])]
 
         cmd += [
             unmix_exe,
@@ -160,7 +191,7 @@ def main():
             f"--start_line={start_line}",
             f"--end_line={end_line}",
             "--normalization=brightness",
-            f"--refl_scale={run_config['inputs']['config']['refl_scale']}"]
+            f"--refl_scale={run_config['inputs']['refl_scale']}"]
 
         print("Running unmix.jl command: " + " ".join(cmd))
         subprocess.run(" ".join(cmd), shell=True)
@@ -218,11 +249,6 @@ def main():
 
     run_config["metadata"]["cover_percentile_counts"] = cover_counts
 
-    # Generate metadata in .met.json file
-    frcov_met_json_path = f"output/{frcov_basename}.met.json"
-    print(f"Generating metadata from runconfig to {frcov_met_json_path}")
-    generate_metadata(run_config, frcov_met_json_path)
-
     # Generate quicklook
     frcov_ql_path = f"output/{frcov_basename}.png"
     print(f"Generating quicklook to {frcov_ql_path}")
@@ -259,7 +285,8 @@ def main():
 
     tiff.SetGeoTransform(no_snow_gdal.GetGeoTransform())
     tiff.SetProjection(no_snow_gdal.GetProjection())
-    tiff.SetMetadataItem("DESCRIPTION","FRACTIONAL COVER")
+    fc_description = f"{disclaimer}FRACTIONAL COVER"
+    tiff.SetMetadataItem("DESCRIPTION", fc_description)
 
     # Write bands to file
     for i,band_name in enumerate(band_names):
@@ -274,10 +301,64 @@ def main():
     os.system(f"gdaladdo -minsize 900 {temp_file}")
     os.system(f"gdal_translate {temp_file} {out_file} -co COMPRESS=LZW -co TILED=YES -co COPY_SRC_OVERVIEWS=YES")
 
+
     out_runconfig =  f"output/{frcov_basename}.runconfig.json"
     print(f"Copying runconfig to {out_runconfig}")
     shutil.copyfile(in_file,
                     out_runconfig)
+
+    # If experimental, prefix filenames with "EXPERIMENTAL-"
+    if experimental:
+        for file in glob.glob(f"output/SISTER*"):
+            shutil.move(file, f"output/EXPERIMENTAL-{os.path.basename(file)}")
+
+    # Update the path variables if now experimental
+    frcov_file = glob.glob("output/*%s.tif" % run_config['inputs']['crid'])[0]
+    out_runconfig = glob.glob("output/*%s.runconfig.json" % run_config['inputs']['crid'])[0]
+    log_path = glob.glob("output/*%s.log" % run_config['inputs']['crid'])[0]
+    frcov_basename = os.path.basename(frcov_file)[:-4]
+
+    # Generate STAC
+    catalog = pystac.Catalog(id=frcov_basename,
+                             description=f'{disclaimer}This catalog contains the output data products of the SISTER '
+                                         f'fractional cover PGE, including a fractional cover cloud-optimized GeoTIFF. '
+                                         f'Execution artifacts including the runconfig file and execution '
+                                         f'log file are included with the fractional cover data.')
+
+    # Add items for data products
+    tif_files = glob.glob("output/*SISTER*.tif")
+    tif_files.sort()
+    for tif_file in tif_files:
+        metadata = generate_stac_metadata(frcov_basename, fc_description, run_config["metadata"])
+        assets = {
+            "cog": f"./{os.path.basename(tif_file)}",
+        }
+        # If it's the fractional cover product, then add png, runconfig, and log
+        if os.path.basename(tif_file) == f"{frcov_basename}.tif":
+            png_file = tif_file.replace(".tif", ".png")
+            assets["browse"] = f"./{os.path.basename(png_file)}"
+            assets["runconfig"] = f"./{os.path.basename(out_runconfig)}"
+            if os.path.exists(log_path):
+                assets["log"] = f"./{os.path.basename(log_path)}"
+        item = create_item(metadata, assets)
+        catalog.add_item(item)
+
+    # set catalog hrefs
+    catalog.normalize_hrefs(f"./output/{frcov_basename}")
+
+    # save the catalog
+    catalog.describe()
+    catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
+    print("Catalog HREF: ", catalog.get_self_href())
+
+    # Move the assets from the output directory to the stac item directories and create empty .met.json files
+    for item in catalog.get_items():
+        for asset in item.assets.values():
+            fname = os.path.basename(asset.href)
+            shutil.move(f"output/{fname}", f"output/{frcov_basename}/{item.id}/{fname}")
+        with open(f"output/{frcov_basename}/{item.id}/{item.id}.met.json", mode="w"):
+            pass
+
 
 if __name__ == "__main__":
     main()

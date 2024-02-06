@@ -8,79 +8,64 @@ unmixing package.  It is oriented towards VSWIR imaging spectroscopy data but ap
 Also, it includes options for different treatments of endmember library assemblages, including MESMA and bootstrapping 
 (aka monte carlo) strategies.
 
-## Dependencies
-
-This repository is built to run on SISTER (Space-based Imaging Spectroscopy and Thermal pathfindER), a data 
-processing back-end that allows for the registration of algorithms as executable containers and execution of those 
-containers at scale.  The manifest file that configures this repository for registration and describes all of its 
-necessary dependencies is called `algorithm_config.yaml`.  In this file you will find:
-
-* The repository URL and version to register
-* The base Docker image which this repository gets installed into
-* The build script which is used to install this repository into the base Docker image
-
-Specific dependencies for executing the code in this repository can be found in both the Dockerfile and the build 
-script.
-
-In addition to the above dependencies, you will need access to the MAAP API via the maap-py library in order to 
-register algorithms and submit jobs.  maap-py can be obtained by running:
-
-    git clone --single-branch --branch system-test-8 https://gitlab.com/geospec/maap-py.git
-
 ## PGE Arguments
 
 The sister-fractional-cover PGE takes the following arguments:
 
 
-| Argument            | Type   | Description                                                                        | Default |
-|---------------------|--------|------------------------------------------------------------------------------------|---------|
-| reflectance_dataset | file   | S3 URL to the corrected reflectance dataset folder                                 | -       |
-| n_cores             | config | Number of cores for parallelization                                                | 1       |
-| refl_scale          | config | Scale image data (divide it by) this amount                                        | none    |
-| normalization       | config | Flag to indicate the scaling type. Options = none, brightness, specific wavelength | none    |
-| crid                | config | Composite Release ID to tag file names                                             | 000     |
+| Argument            | Description                                                                        | Default |
+|---------------------|------------------------------------------------------------------------------------|---------|
+| reflectance_dataset | S3 URL to the corrected reflectance dataset folder                                 | -       |
+| n_cores             | Number of cores for parallelization                                                | 1       |
+| refl_scale          | Scale image data (divide it by) this amount                                        | none    |
+| normalization       | Flag to indicate the scaling type. Options = none, brightness, specific wavelength | none    |
+| crid                | Composite Release ID to tag file names                                             | 000     |
+| experimental        | Designates outputs as "experimental"                                               | 'True'  |
 
 ## Outputs
 
 The L2B fractional cover PGE outputs a GeoTIFF containing layers for vegetation, soil, water, and snow and supporting 
 files. The outputs of the PGE use the following naming convention:
 
-    SISTER_INSTRUMENT_LEVEL_PRODUCT_YYYYMMDDTHHMMSS_CRID.EXTENSION
+    (EXPERIMENTAL-)SISTER_INSTRUMENT_LEVEL_PRODUCT_YYYYMMDDTHHMMSS_CRID.EXTENSION
 
-| Product                                                       | Format, Units | Example filename                                         |
-|---------------------------------------------------------------|---------------|----------------------------------------------------------|
-| Fractional cover raster image (vegetation, soil, water, snow) | GeoTIFF       | SISTER_AVNG_L2B_FRCOV_20220814T183137_000.tif            |
-| Fractional cover metadata file                                | JSON          | SISTER_AVNG_L2B_FRCOV_20220814T183137_000.met.json       |
-| Fractional cover browse image                                 | PNG           | SISTER_AVNG_L2B_FRCOV_20220814T183137_000.png            |
-| PGE log file                                                  | Text          | SISTER_AVNG_L2B_FRCOV_20220814T183137_000.log            |
-| PGE run config                                                | JSON          | SISTER_AVNG_L2B_FRCOV_20220814T183137_000.runconfig.json |
+Note that the "EXPERIMENTAL-" prefix is optional and is only added when the "experimental" flag is set to True.
 
-## Registering the Repository with SISTER
+The following data products are produced:
 
-    from maap.maap import MAAP
-    
-    maap = MAAP(maap_host="34.216.77.111")
-    
-    algo_config_path = "sister-fractional-cover/algorithm_config.yaml"
-    response = maap.register_algorithm_from_yaml_file(file_path=algo_config_path)
-    print(response.text)
+| Product                                                       | Format  | Example filename                                         |
+|---------------------------------------------------------------|---------|----------------------------------------------------------|
+| Fractional cover raster image (vegetation, soil, water, snow) | GeoTIFF | SISTER_AVCL_L2B_FRCOV_20110513T175417_000.tif            |
+| Fractional cover metadata file (STAC formatted)               | JSON    | SISTER_AVCL_L2B_FRCOV_20110513T175417_000.json           |
+| Fractional cover browse image                                 | PNG     | SISTER_AVCL_L2B_FRCOV_20110513T175417_000.png            |
+| PGE log file                                                  | Text    | SISTER_AVCL_L2B_FRCOV_20110513T175417_000.log            |
+| PGE run config                                                | JSON    | SISTER_AVCL_L2B_FRCOV_20110513T175417_000.runconfig.json |
 
-## Submitting a Job on SISTER
+Metadata files are [STAC formatted](https://stacspec.org/en) and compatible with tools in the [STAC ecosystem](https://stacindex.org/ecosystem).
 
-    from maap.maap import MAAP
-    
-    maap = MAAP(maap_host="34.216.77.111")
-    
-    job_response = maap.submitJob(
-        algo_id="sister-fractional-cover",
-        version="1.0.0",
-        l2a_rfl="s3://s3.us-west-2.amazonaws.com:80/sister-ops-workspace/LOM/PRODUCTS/AVNG/L2A_CORFL/2022/08/14/SISTER_AVNG_L2A_CORFL_20220814T183137_000",
-        n_cores=32,
-        crid="000",
-        normalization="brightness",
-        publish_to_cmr=False,
-        cmr_metadata={},
-        queue="sister-job_worker-8gb",
-        identifier="SISTER_AVNG_L2B_FRCOV_20220814T183137_000")
-    
-    print(isofit_job_response.id, isofit_job_response.status)
+## Executing the Algorithm
+
+This algorithm requires [Anaconda Python](https://www.anaconda.com/download)
+
+To install and run the code, first clone the repository and execute the install script:
+
+    git clone https://github.com/sister-jpl/sister-fractional-cover.git
+    cd sister-fractional-cover
+    ./install.sh
+    cd ..
+
+Then, create a working directory and enter it:
+
+    mkdir WORK_DIR
+    cd WORK_DIR
+
+Copy input files to the work directory. For each "dataset" input, create a folder with the dataset name, then download 
+the data file(s) and STAC JSON file into the folder.  For example, the reflectance dataset input would look like this:
+
+    WORK_DIR/SISTER_AVCL_L2A_CORFL_20110513T175417_000/SISTER_AVCL_L2A_CORFL_20110513T175417_000.bin
+    WORK_DIR/SISTER_AVCL_L2A_CORFL_20110513T175417_000/SISTER_AVCL_L2A_CORFL_20110513T175417_000.hdr
+    WORK_DIR/SISTER_AVCL_L2A_CORFL_20110513T175417_000/SISTER_AVCL_L2A_CORFL_20110513T175417_000.json
+
+Finally, run the code 
+
+    ../sister-fractional-cover/run.sh --reflectance_dataset SISTER_AVCL_L2A_CORFL_20110513T175417_000
